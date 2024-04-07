@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { endpoint, idl } from '$lib';
+	import { endpoint, idl, commitmentLevel } from '$lib';
 	import { ConnectionProvider, WalletProvider } from '@svelte-on-solana/wallet-adapter-ui';
 	import { onMount } from 'svelte';
 	import { AnchorConnectionProvider } from '@svelte-on-solana/wallet-adapter-anchor';
 	const localStorageKey = 'walletAdapter';
 	const network = endpoint; // localhost or mainnet
+	const config = commitmentLevel;
 
 	let wallets: any;
 
@@ -18,7 +19,7 @@
 </script>
 
 <WalletProvider {localStorageKey} {wallets} autoConnect />
-<ConnectionProvider {network} />
+<ConnectionProvider {network} {config} />
 <AnchorConnectionProvider {network} {idl} />
 <div>
 	<slot />
