@@ -3,11 +3,11 @@
 	import { connection, programId } from '$lib';
 	import { web3 } from '@project-serum/anchor';
 	import { TOKEN_PROGRAM_ID } from '@project-serum/anchor/dist/cjs/utils/token';
+	import { LAMPORTS_PER_SOL } from '@solana/web3.js';
 	import { workSpace } from '@svelte-on-solana/wallet-adapter-anchor';
-	import { WalletMultiButton } from '@svelte-on-solana/wallet-adapter-ui';
 	import { walletStore } from '@svelte-on-solana/wallet-adapter-core';
+	import { WalletMultiButton } from '@svelte-on-solana/wallet-adapter-ui';
 	import { onMount } from 'svelte';
-	import { Keypair, LAMPORTS_PER_SOL, type TransactionSignature } from '@solana/web3.js';
 	let initialized = false;
 	let domainName = '';
 	let metadataURI = '';
@@ -18,16 +18,20 @@
 		try {
 			if (!initialized) {
 				const top_domains = ['solana', 'meta', 'music', 'nft', 'web3', 'lpp', '404', '007'];
-				await $workSpace.program?.methods
+				const tx = await $workSpace.program?.methods
 					.initDns(top_domains)
 					.accounts({
 						dnsState: dnsState,
-						signer: $workSpace.baseAccount!.publicKey,
+						signer: $walletStore.publicKey,
 						systemProgram: $workSpace.systemProgram?.programId
 					})
-					.signers([$workSpace.baseAccount!])
-					.rpc();
-				initialized = true; // Update initialization status
+					.transaction();
+				tx!.feePayer = $walletStore.publicKey;
+				tx!.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+				const signedTx = await $walletStore.signTransaction(tx);
+				const txId = await connection.sendRawTransaction(signedTx.serialize());
+				await connection.confirmTransaction(txId);
+				console.log('🚀 ~ initDns ~ txId:', txId);
 			} else {
 				console.log('Program already initialized');
 			}
@@ -38,22 +42,15 @@
 
 	// Function to register a domain
 	async function registerDomain() {
-		// let payer = web3.Keypair.generate();
+		let payer = web3.Keypair.generate();
 
 		// let airdropSignature = await connection.requestAirdrop(payer.publicKey, web3.LAMPORTS_PER_SOL);
 
 		// await connection.confirmTransaction(airdropSignature);
-		const walletStore = Keypair.fromSecretKey(
-			Uint8Array.from(
-				Buffer.from(
-					'39K8UpjeKRAVsQ64XNmuTGt134PG2Hv8VnhA7xkj5htL7KrLZYJnNRrqfdGDdtwFzdX9Twk4Ye2EDthqMs8bjHNS',
-					'hex'
-				)
-			)
-		);
-		console.log('🚀 ~ registerDomain ~ walletStore:', walletStore);
+
+		console.log('🚀 ~ registerDomain ~ walletStore:', $walletStore);
 		let lamportBalance;
-		const balance = await connection.getBalance(walletStore.publicKey);
+		const balance = await connection.getBalance($walletStore.publicKey);
 		lamportBalance = balance / LAMPORTS_PER_SOL;
 		console.log('🚀 ~ registerDomain ~ lamportBalance:', lamportBalance);
 
@@ -63,11 +60,11 @@
 			programId
 		);
 		try {
-			await $workSpace.program?.methods
+			const tx = await $workSpace.program?.methods
 				.registerDomain(
 					'domain1',
 					1,
-					walletStore.publicKey,
+					$walletStore.publicKey,
 					'https://arweave.net/y5e5DJsiwH0s_ayfMwYk-SnrZtVZzHLQDSTZ5dNRUHA',
 					'NFT Title',
 					'sol'
@@ -75,24 +72,31 @@
 				.accounts({
 					domain: derivedPublicKey,
 					state: dnsState,
-					receiver: walletStore.publicKey,
+					receiver: payer.publicKey,
 					chainlinkFeed: new web3.PublicKey('CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt'),
 					chainlinkProgram: new web3.PublicKey('HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny'),
-					receiverAta: walletStore.publicKey,
-					payerAta: walletStore.publicKey,
-					mintAuthority: walletStore.publicKey,
-					mint: walletStore.publicKey,
-					tokenAccount: walletStore.publicKey,
+					receiverAta: $walletStore.publicKey,
+					payerAta: $walletStore.publicKey,
+					mintAuthority: $walletStore.publicKey,
+					mint: $walletStore.publicKey,
+					tokenAccount: $walletStore.publicKey,
 					tokenProgram: TOKEN_PROGRAM_ID,
-					metadata: walletStore.publicKey,
-					tokenMetadataProgram: walletStore.publicKey,
-					masterEdition: walletStore.publicKey,
-					authority: walletStore.publicKey,
+					metadata: $walletStore.publicKey,
+					tokenMetadataProgram: $walletStore.publicKey,
+					masterEdition: $walletStore.publicKey,
+					authority: $walletStore.publicKey,
 					rent: web3.SYSVAR_RENT_PUBKEY,
 					systemProgram: web3.SystemProgram.programId
 				})
-				.signers([walletStore])
-				.rpc();
+				.transaction();
+			tx!.feePayer = $walletStore.publicKey;
+			tx!.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+			const signedTx = await $walletStore.signTransaction(tx);
+			console.log("🚀 ~ registerDomain ~ signedTx:", signedTx)
+
+			const txId = await connection.sendRawTransaction(signedTx.serialize());
+			await connection.confirmTransaction(txId);
+			console.log('🚀 ~ registerDomain ~ signedTx:', txId);
 		} catch (error) {
 			console.log('🚀 ~ registerDomain ~ error:', error);
 		}
