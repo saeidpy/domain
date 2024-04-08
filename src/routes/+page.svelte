@@ -3,6 +3,7 @@
 	import { connection, programId } from '$lib';
 	import { web3 } from '@project-serum/anchor';
 	import { TOKEN_PROGRAM_ID } from '@project-serum/anchor/dist/cjs/utils/token';
+	import { getAssociatedTokenAddress, getExtraAccountMetaAddress } from '@solana/spl-token';
 	import { LAMPORTS_PER_SOL } from '@solana/web3.js';
 	import { workSpace } from '@svelte-on-solana/wallet-adapter-anchor';
 	import { walletStore } from '@svelte-on-solana/wallet-adapter-core';
@@ -42,29 +43,33 @@
 
 	// Function to register a domain
 	async function registerDomain() {
-		let payer = web3.Keypair.generate();
+		let mint = web3.Keypair.generate();
 
 		// let airdropSignature = await connection.requestAirdrop(payer.publicKey, web3.LAMPORTS_PER_SOL);
 
 		// await connection.confirmTransaction(airdropSignature);
 
-		console.log('🚀 ~ registerDomain ~ walletStore:', $walletStore);
 		let lamportBalance;
 		const balance = await connection.getBalance($walletStore.publicKey);
 		lamportBalance = balance / LAMPORTS_PER_SOL;
-		console.log('🚀 ~ registerDomain ~ lamportBalance:', lamportBalance);
 
 		let [dnsState] = web3.PublicKey.findProgramAddressSync([Buffer.from('dns_state')], programId);
 		let [derivedPublicKey, nonce] = web3.PublicKey.findProgramAddressSync(
 			[Buffer.from('domain'), Buffer.from('domain1')],
 			programId
 		);
+
+		let associatedTokenAccount = await getAssociatedTokenAddress(
+			mint.publicKey,
+			$walletStore.publicKey
+		);
+
 		try {
 			const tx = await $workSpace.program?.methods
 				.registerDomain(
 					'domain1',
 					1,
-					$walletStore.publicKey,
+					mint.publicKey,
 					'https://arweave.net/y5e5DJsiwH0s_ayfMwYk-SnrZtVZzHLQDSTZ5dNRUHA',
 					'NFT Title',
 					'sol'
@@ -72,14 +77,14 @@
 				.accounts({
 					domain: derivedPublicKey,
 					state: dnsState,
-					receiver: payer.publicKey,
+					receiver: $walletStore.publicKey,
 					chainlinkFeed: new web3.PublicKey('CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt'),
 					chainlinkProgram: new web3.PublicKey('HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny'),
 					receiverAta: $walletStore.publicKey,
 					payerAta: $walletStore.publicKey,
 					mintAuthority: $walletStore.publicKey,
-					mint: $walletStore.publicKey,
-					tokenAccount: $walletStore.publicKey,
+					mint: mint.publicKey,
+					tokenAccount: associatedTokenAccount,
 					tokenProgram: TOKEN_PROGRAM_ID,
 					metadata: $walletStore.publicKey,
 					tokenMetadataProgram: $walletStore.publicKey,
@@ -89,10 +94,10 @@
 					systemProgram: web3.SystemProgram.programId
 				})
 				.transaction();
+
 			tx!.feePayer = $walletStore.publicKey;
 			tx!.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 			const signedTx = await $walletStore.signTransaction(tx);
-			console.log("🚀 ~ registerDomain ~ signedTx:", signedTx)
 
 			const txId = await connection.sendRawTransaction(signedTx.serialize());
 			await connection.confirmTransaction(txId);
