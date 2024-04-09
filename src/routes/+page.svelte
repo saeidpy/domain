@@ -1,20 +1,23 @@
 <!-- App.svelte -->
 <script lang="ts">
-	import { CHAINLINK_FEED, CHAINLINK_PROGRAM_ID, connection, programId } from '$lib';
-	import { web3, Wallet } from '@project-serum/anchor';
-	import { TOKEN_PROGRAM_ID } from '@project-serum/anchor/dist/cjs/utils/token';
 	import {
-		getAssociatedTokenAddressSync,
-		getOrCreateAssociatedTokenAccount,
-		type Account,
-		getAccount,
-		createAssociatedTokenAccountInstruction
-	} from '@solana/spl-token';
-	import { LAMPORTS_PER_SOL, Transaction } from '@solana/web3.js';
+		CHAINLINK_FEED,
+		CHAINLINK_PROGRAM_ID,
+		METADATA_SEED,
+		TOKEN_METADATA_PROGRAM_ID,
+		connection,
+		programId
+	} from '$lib';
+	import { getOrCreateAssociatedTokenAccount } from '$lib/utils/getOrCreateTokenAccount';
+	import { web3 } from '@project-serum/anchor';
+	import { TOKEN_PROGRAM_ID } from '@project-serum/anchor/dist/cjs/utils/token';
+	import { getAssociatedTokenAddressSync } from '@solana/spl-token';
+	import { Keypair, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 	import { workSpace } from '@svelte-on-solana/wallet-adapter-anchor';
 	import { walletStore } from '@svelte-on-solana/wallet-adapter-core';
 	import { WalletMultiButton } from '@svelte-on-solana/wallet-adapter-ui';
-	import { onMount } from 'svelte';
+	import * as bs58 from 'bs58';
+
 	let initialized = false;
 	let domainName = '';
 	let metadataURI = '';
@@ -50,7 +53,9 @@
 
 	// Function to register a domain
 	async function registerDomain() {
-		let mint = web3.Keypair.generate();
+		let mint = {
+			publicKey: new PublicKey(bs58.decode('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'))
+		};
 
 		// let airdropSignature = await connection.requestAirdrop(payer.publicKey, web3.LAMPORTS_PER_SOL);
 
@@ -60,37 +65,24 @@
 		const balance = await connection.getBalance($walletStore.publicKey);
 		lamportBalance = balance / LAMPORTS_PER_SOL;
 
-		let [dnsState] = web3.PublicKey.findProgramAddressSync([Buffer.from('dns_state')], programId);
-		let [derivedPublicKey, nonce] = web3.PublicKey.findProgramAddressSync(
+		const [dnsState] = web3.PublicKey.findProgramAddressSync([Buffer.from('dns_state')], programId);
+		const [derivedPublicKey] = web3.PublicKey.findProgramAddressSync(
 			[Buffer.from('domain'), Buffer.from('domain1.solana')],
 			programId
 		);
+		const [metadataAddress] = web3.PublicKey.findProgramAddressSync(
+			[Buffer.from(METADATA_SEED), TOKEN_METADATA_PROGRAM_ID.toBuffer(), mint.publicKey.toBuffer()],
+			TOKEN_METADATA_PROGRAM_ID
+		);
 
-		const associatedToken = getAssociatedTokenAddressSync(mint.publicKey, $walletStore.publicKey);
-		let account: Account;
-
-		try {
-			account = await getAccount(connection, associatedToken);
-			console.log("🚀 ~ registerDomain ~ account:", account)
-		} catch (error) {
-			try {
-				const transaction = new Transaction().add(
-					createAssociatedTokenAccountInstruction(
-						$walletStore.publicKey,
-						associatedToken,
-						$walletStore.publicKey,
-						mint.publicKey
-					)
-				);
-				transaction!.feePayer = $walletStore.publicKey;
-				transaction!.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-				const signedTx = await $walletStore.signTransaction(transaction);
-				const txId = await connection.sendRawTransaction(signedTx.serialize());
-				console.log('🚀 ~ registerDomain ~ txId:', txId);
-				await connection.confirmTransaction(txId);
-			} catch (error) {}
-		}
-		console.log('🚀 ~ registerDomain ~ account:', account!);
+		// const tokenAccount = await getOrCreateAssociatedTokenAccount(
+		// 	connection,
+		// 	$walletStore,
+		// 	mint.publicKey,
+		// 	$walletStore.publicKey
+		// );
+		const tokenAccount = getAssociatedTokenAddressSync(mint.publicKey, $walletStore.publicKey);
+		console.log("🚀 ~ registerDomain ~ tokenAccount:", tokenAccount)
 
 		try {
 			const tx = await $workSpace.program?.methods
@@ -112,10 +104,10 @@
 					payerAta: $walletStore.publicKey,
 					mintAuthority: $walletStore.publicKey,
 					mint: mint.publicKey,
-					tokenAccount: account!.address,
+					tokenAccount: tokenAccount,
 					tokenProgram: TOKEN_PROGRAM_ID,
-					metadata: $walletStore.publicKey,
-					tokenMetadataProgram: TOKEN_PROGRAM_ID,
+					metadata: metadataAddress,
+					tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
 					masterEdition: $walletStore.publicKey,
 					authority: $walletStore.publicKey,
 					rent: web3.SYSVAR_RENT_PUBKEY,
