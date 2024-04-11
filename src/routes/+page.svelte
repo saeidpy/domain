@@ -19,24 +19,30 @@
 	import { web3 } from '@project-serum/anchor';
 	import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token';
 	import { workSpace } from '@svelte-on-solana/wallet-adapter-anchor';
+	//@ts-ignore
 	import { walletStore } from '@svelte-on-solana/wallet-adapter-core';
 	import { WalletMultiButton } from '@svelte-on-solana/wallet-adapter-ui';
 
-	let initialized = true;
-	let isLoading = false;
-	let initIsLoading = false;
-	let domainName = '';
-	let metadataURI = '';
 	const umi = createUmi(endpoint)
 		.use(walletAdapterIdentity($walletStore, true))
 		.use(mplTokenMetadata());
+	let initialized = true;
+	let isLoading = false;
+	let initIsLoading = false;
+	let domainName = 'domain1';
+	let uri = 'https://arweave.net/y5e5DJsiwH0s_ayfMwYk-SnrZtVZzHLQDSTZ5dNRUHA';
+	let title = 'Nft title';
+	let errorMessage = '';
+	let domainType = 'solana';
+	const top_domains = ['solana', 'meta', 'music', 'nft', 'web3', 'lpp', '404', '007'];
+
 	//wallet mnemonic= wash paddle silly corn glance embrace cannon armed fortune trade wrap invite
+
 	async function initDns() {
 		let [dnsState] = web3.PublicKey.findProgramAddressSync([Buffer.from('dns_state')], programId);
 
 		try {
 			initIsLoading = true;
-			const top_domains = ['solana', 'meta', 'music', 'nft', 'web3', 'lpp', '404', '007'];
 			const tx = await $workSpace.program?.methods
 				.initDns(top_domains)
 				.accounts({
@@ -58,53 +64,41 @@
 			initialized = true;
 			initIsLoading = false;
 			//initial txId: 3pjer97DJf9BJV3skKs9k7S2wj6GRaw54Cmz9Lb8Ft1sfHMJBvumXpwgFTbLfua9duxDUrgyAb11Hseyrj2jqFnT
-		} catch (error) {
+		} catch (error: any) {
 			initialized = true;
 			initIsLoading = false;
+			errorMessage = new Error(error).message;
 		}
 	}
 
-	// Function to register a domain
 	async function registerDomain() {
-		isLoading = true;
-		// generate the mint account
-		const mint = web3.Keypair.generate();
-
-		// Derive the associated token address account for the mint
-		const associatedTokenAccount = await getAssociatedTokenAddress(
-			mint.publicKey,
-			$walletStore.publicKey
-		);
-
-		console.log('🚀 ~ registerDomain ~ associatedTokenAccount:', associatedTokenAccount);
-		// derive the metadata account
-		const metadataAccount = findMetadataPda(umi, {
-			mint: publicKey(mint.publicKey)
-		})[0];
-
-		console.log('🚀 ~ registerDomain ~ metadataAccount:', metadataAccount);
-		//derive the master edition pda
-		const masterEditionAccount = findMasterEditionPda(umi, {
-			mint: publicKey(mint.publicKey)
-		})[0];
-		console.log('🚀 ~ registerDomain ~ masterEditionAccount:', masterEditionAccount);
-
-		const [dnsState] = web3.PublicKey.findProgramAddressSync([Buffer.from('dns_state')], programId);
-		const [derivedPublicKey] = web3.PublicKey.findProgramAddressSync(
-			[Buffer.from('domain'), Buffer.from('domain1.solana')],
-			programId
-		);
-
 		try {
+			isLoading = true;
+			errorMessage = '';
+			const _domainName = domainName + '.' + domainType;
+			const mint = web3.Keypair.generate();
+
+			const tokenAccount = await getAssociatedTokenAddress(mint.publicKey, $walletStore.publicKey);
+
+			const metadataAccount = findMetadataPda(umi, {
+				mint: publicKey(mint.publicKey)
+			})[0];
+
+			const masterEditionAccount = findMasterEditionPda(umi, {
+				mint: publicKey(mint.publicKey)
+			})[0];
+
+			const [dnsState] = web3.PublicKey.findProgramAddressSync(
+				[Buffer.from('dns_state')],
+				programId
+			);
+			const [derivedPublicKey] = web3.PublicKey.findProgramAddressSync(
+				[Buffer.from('domain'), Buffer.from(_domainName)],
+				programId
+			);
+
 			const tx = await $workSpace.program?.methods
-				.registerDomain(
-					'domain1.solana',
-					1,
-					mint.publicKey,
-					'https://arweave.net/y5e5DJsiwH0s_ayfMwYk-SnrZtVZzHLQDSTZ5dNRUHA',
-					'NFT Title',
-					'sol'
-				)
+				.registerDomain(_domainName, 1, mint.publicKey, uri, title, 'sol')
 				.accounts({
 					domain: derivedPublicKey,
 					state: dnsState,
@@ -115,7 +109,7 @@
 					payerAta: $walletStore.publicKey,
 					mintAuthority: $walletStore.publicKey,
 					mint: mint.publicKey,
-					tokenAccount: associatedTokenAccount,
+					tokenAccount: tokenAccount,
 					tokenProgram: TOKEN_PROGRAM_ID,
 					metadata: metadataAccount,
 					tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
@@ -137,10 +131,10 @@
 				lastValidBlockHeight: latestBlockHash.lastValidBlockHeight
 			});
 			console.log('🚀 ~ registerDomain ~ signedTx:', txId);
-		} catch (error) {
+		} catch (error: any) {
 			isLoading = false;
-
 			console.log('🚀 ~ registerDomain ~ error:', error);
+			errorMessage = new Error(error).message;
 		}
 		isLoading = false;
 	}
@@ -153,24 +147,35 @@
 		<button on:click={initDns} disabled={initialized || initIsLoading}>
 			{initIsLoading ? 'Loading...' : initialized ? 'Initialed' : 'Init Program'}</button
 		>
-		<h2>Solana Domain Registration</h2>
+		<h2>Domain Registration</h2>
 		<form on:submit|preventDefault={registerDomain}>
 			<label for="domainName">Domain Name:</label>
-			<input
-				type="text"
-				id="domainName"
-				bind:value={domainName}
-				pattern={'[a-zA-Z0-9-]+.[a-zA-Z]{2,}'}
-				title="Please enter a valid domain name (e.g., example.com)"
-				required
-			/>
+			<div style="display: flex;">
+				<input
+					type="text"
+					id="domainName"
+					bind:value={domainName}
+					pattern={'[a-zA-Z0-9-]+.[a-zA-Z]{2,}'}
+					title="Please enter a valid domain name (e.g., example.com)"
+					required
+				/>
+				<select id="domainType" bind:value={domainType}>
+					{#each top_domains as domain (domain)}
+						<option value={domain}>.{domain}</option>
+					{/each}
+				</select>
+			</div>
 
-			<label for="metadataURI">Metadata URI:</label>
-			<input type="text" id="metadataURI" bind:value={metadataURI} />
+			<label for="metadataURI">URI:</label>
+			<input type="text" id="metadataURI" bind:value={uri} />
+
+			<label for="metadataURI">Title:</label>
+			<input type="text" id="metadataTitle" bind:value={title} />
 
 			<button type="submit" disabled={isLoading}
 				>{isLoading ? 'Loading...' : 'Register Domain'}</button
 			>
+			<span>{errorMessage}</span>
 		</form>
 	</div>
 </div>
@@ -192,6 +197,7 @@
 
 	.form-container {
 		max-width: 400px;
+		min-width: 320px;
 		margin: 0 auto;
 		padding: 20px;
 		border: 1px solid var(--custom-primary-color);
@@ -201,14 +207,19 @@
 
 	.form-container label {
 		display: block;
-		margin-bottom: 10px;
 		font-weight: bold;
 	}
 
 	.form-container input[type='text'] {
 		width: 100%;
 		padding: 10px;
-		margin-bottom: 15px;
+		border: 1px solid var(--custom-primary-color);
+		border-radius: 5px;
+		box-sizing: border-box;
+	}
+	.form-container select {
+		width: 40%;
+		padding: 10px;
 		border: 1px solid var(--custom-primary-color);
 		border-radius: 5px;
 		box-sizing: border-box;
@@ -230,5 +241,11 @@
 	.form-container button:disabled {
 		cursor: auto;
 		background-color: var(--custom-button-disabled-color);
+	}
+	.form-container form {
+		width: 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
 	}
 </style>
